@@ -89,7 +89,18 @@ void CommonCLI::loadPrefsInt(FILESYSTEM* fs, const char* filename) {
     file.read((uint8_t *)&_prefs->adc_multiplier, sizeof(_prefs->adc_multiplier));                 // 166
     file.read((uint8_t *)_prefs->owner_info, sizeof(_prefs->owner_info));                          // 170
     file.read((uint8_t *)&_prefs->rx_boosted_gain, sizeof(_prefs->rx_boosted_gain));              // 290
-    // next: 291
+    // TCPRadio extension — appended at offset 291. On older prefs files the
+    // bytes simply aren't there; file.read returns 0 and the fields keep their
+    // zero-init defaults (set via memset in MyMesh constructor).
+    file.read((uint8_t *)_prefs->modem_host, sizeof(_prefs->modem_host));                         // 291
+    file.read((uint8_t *)&_prefs->modem_port, sizeof(_prefs->modem_port));                        // 355
+    file.read((uint8_t *)&_prefs->modem_token_len, sizeof(_prefs->modem_token_len));              // 357
+    file.read((uint8_t *)_prefs->modem_token, sizeof(_prefs->modem_token));                       // 358
+    // next: 374
+
+    // sanity for the new TCPRadio fields
+    _prefs->modem_host[sizeof(_prefs->modem_host) - 1] = '\0';  // force NUL-term
+    if (_prefs->modem_token_len > sizeof(_prefs->modem_token)) _prefs->modem_token_len = 0;
 
     // sanitise bad pref values
     _prefs->rx_delay_base = constrain(_prefs->rx_delay_base, 0, 20.0f);
@@ -180,7 +191,12 @@ void CommonCLI::savePrefs(FILESYSTEM* fs) {
     file.write((uint8_t *)&_prefs->adc_multiplier, sizeof(_prefs->adc_multiplier));                 // 166
     file.write((uint8_t *)_prefs->owner_info, sizeof(_prefs->owner_info));                          // 170
     file.write((uint8_t *)&_prefs->rx_boosted_gain, sizeof(_prefs->rx_boosted_gain));              // 290
-    // next: 291
+    // TCPRadio modem endpoint
+    file.write((uint8_t *)_prefs->modem_host, sizeof(_prefs->modem_host));                         // 291
+    file.write((uint8_t *)&_prefs->modem_port, sizeof(_prefs->modem_port));                        // 355
+    file.write((uint8_t *)&_prefs->modem_token_len, sizeof(_prefs->modem_token_len));              // 357
+    file.write((uint8_t *)_prefs->modem_token, sizeof(_prefs->modem_token));                       // 358
+    // next: 374
 
     file.close();
   }

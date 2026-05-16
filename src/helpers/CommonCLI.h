@@ -61,6 +61,12 @@ struct NodePrefs { // persisted to file
   uint8_t rx_boosted_gain; // power settings
   uint8_t path_hash_mode;   // which path mode to use when sending
   uint8_t loop_detect;
+  // TCPRadio modem endpoint (only meaningful when WRAPPER_CLASS=CustomTCPRadioWrapper).
+  // For stock variants these are unused and persist as zeros.
+  char    modem_host[64];
+  uint16_t modem_port;
+  uint8_t modem_token_len;     // 0 = no auth
+  uint8_t modem_token[16];
 };
 
 class CommonCLICallbacks {

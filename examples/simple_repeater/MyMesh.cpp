@@ -1,5 +1,8 @@
 #include "MyMesh.h"
 #include <algorithm>
+#ifdef TCPRADIO
+  #include <WiFi.h>   // for WiFi.localIP() / SSID() / RSSI() in `get modem.status`
+#endif
 
 /* ------------------------------ Config -------------------------------- */
 
@@ -956,6 +959,17 @@ void MyMesh::begin(FILESYSTEM *fs) {
   radio_driver.setParams(_prefs.freq, _prefs.bw, _prefs.sf, _prefs.cr);
   radio_driver.setTxPower(_prefs.tx_power_dbm);
 
+#ifdef TCPRADIO
+  // Apply persisted modem endpoint (overrides build-flag defaults set in the
+  // wrapper's constructor). Host-only check: a missing port just means the
+  // user only changed the host, default 5055 covers that.
+  if (_prefs.modem_host[0] != '\0') {
+    uint16_t p = _prefs.modem_port ? _prefs.modem_port : 5055;
+    radio_driver.setEndpoint(_prefs.modem_host, p);
+  }
+  radio_driver.setAuthToken(_prefs.modem_token, _prefs.modem_token_len);
+#endif
+
   radio_driver.setRxBoostedGainMode(_prefs.rx_boosted_gain);
   MESH_DEBUG_PRINTLN("RX Boosted Gain Mode: %s",
                      radio_driver.getRxBoostedGainMode() ? "Enabled" : "Disabled");
@@ -1251,6 +1265,87 @@ void MyMesh::handleCommand(uint32_t sender_timestamp, char *command, char *reply
       sendNodeDiscoverReq();
       strcpy(reply, "OK - Discover sent");
     }
+#ifdef TCPRADIO
+  // ─── TCPRadio modem control (variant-specific) ─────────────────────
+  } else if (memcmp(command, "set modem.host ", 15) == 0) {
+    const char* val = command + 15;
+    while (*val == ' ') val++;
+    if (*val == 0 || strlen(val) >= sizeof(_prefs.modem_host)) {
+      strcpy(reply, "Err - usage: set modem.host <hostname|ip>");
+    } else {
+      StrHelper::strncpy(_prefs.modem_host, val, sizeof(_prefs.modem_host));
+      if (_prefs.modem_port == 0) _prefs.modem_port = 5055;  // default port if unset
+      radio_driver.setEndpoint(_prefs.modem_host, _prefs.modem_port);
+      _cli.savePrefs(_fs);
+      strcpy(reply, "OK");
+    }
+  } else if (memcmp(command, "set modem.port ", 15) == 0) {
+    int p = atoi(command + 15);
+    if (p <= 0 || p > 65535) {
+      strcpy(reply, "Err - port must be 1..65535");
+    } else {
+      _prefs.modem_port = (uint16_t)p;
+      if (_prefs.modem_host[0]) radio_driver.setEndpoint(_prefs.modem_host, _prefs.modem_port);
+      _cli.savePrefs(_fs);
+      strcpy(reply, "OK");
+    }
+  } else if (memcmp(command, "set modem.token", 15) == 0) {
+    const char* hex = command + 15;
+    while (*hex == ' ') hex++;
+    if (*hex == 0) {
+      _prefs.modem_token_len = 0;
+      memset(_prefs.modem_token, 0, sizeof(_prefs.modem_token));
+      radio_driver.setAuthToken(nullptr, 0);
+      _cli.savePrefs(_fs);
+      strcpy(reply, "OK - token cleared");
+    } else {
+      int hlen = strlen(hex);
+      if ((hlen & 1) || hlen > (int)(sizeof(_prefs.modem_token) * 2)) {
+        strcpy(reply, "Err - hex must be even length, max 32 chars");
+      } else if (!mesh::Utils::fromHex(_prefs.modem_token, hlen / 2, hex)) {
+        strcpy(reply, "Err - bad hex");
+      } else {
+        _prefs.modem_token_len = hlen / 2;
+        radio_driver.setAuthToken(_prefs.modem_token, _prefs.modem_token_len);
+        _cli.savePrefs(_fs);
+        strcpy(reply, "OK");
+      }
+    }
+  } else if (strcmp(command, "get modem.status") == 0) {
+    String wssid = WiFi.SSID();
+    String wip   = WiFi.localIP().toString();
+    snprintf(reply, 160,
+      "modem=%s:%u conn=%d hs=%d rx=%d rec=%lu | wifi=%s@%s (%ddBm)",
+      radio_driver.getModemHost(), (unsigned)radio_driver.getModemPort(),
+      radio_driver.isConnected() ? 1 : 0,
+      radio_driver.isHandshakeComplete() ? 1 : 0,
+      radio_driver.isInRecvMode() ? 1 : 0,
+      (unsigned long)radio_driver.getReconnectCount(),
+      wssid.length() ? wssid.c_str() : "?",
+      wip.c_str(),
+      (int)WiFi.RSSI());
+  } else if (strcmp(command, "get modem.stats") == 0) {
+    snprintf(reply, 160,
+      "rx=%lu tx=%lu pong=%lu crc_err=%lu noise=%ddBm rssi=%d snr=%.1f",
+      (unsigned long)radio_driver.getPacketsRecv(),
+      (unsigned long)radio_driver.getPacketsSent(),
+      (unsigned long)radio_driver.getPongCount(),
+      (unsigned long)radio_driver.getCrcErrors(),
+      radio_driver.getNoiseFloor(),
+      (int)radio_driver.getLastRSSI(),
+      radio_driver.getLastSNR());
+  } else if (strcmp(command, "modem.reconnect") == 0) {
+    radio_driver.forceReconnect();
+    strcpy(reply, "OK - reconnect requested");
+  } else if (strcmp(command, "modem.ping") == 0) {
+    if (!radio_driver.isConnected()) {
+      strcpy(reply, "Err - not connected");
+    } else if (radio_driver.sendPing()) {
+      strcpy(reply, "OK - PING sent");
+    } else {
+      strcpy(reply, "Err - send failed");
+    }
+#endif // TCPRADIO
   } else{
     _cli.handleCommand(sender_timestamp, command, reply);  // common CLI commands
   }

@@ -1,6 +1,10 @@
 #include "UITask.h"
 #include <Arduino.h>
 #include <helpers/CommonCLI.h>
+#ifdef TCPRADIO
+  #include <target.h>   // for the `radio_driver` global
+  #include <WiFi.h>     // local IP / SSID / RSSI for the status overlay
+#endif
 
 #ifndef USER_BTN_PRESSED
 #define USER_BTN_PRESSED LOW
@@ -79,6 +83,20 @@ void UITask::renderCurrScreen() {
     _display->setColor(DisplayDriver::GREEN);
     _display->print(_node_prefs->node_name);
 
+#ifdef TCPRADIO
+    // Wi-Fi credentials + local IP — useful for finding the device on the network.
+    _display->setCursor(0, 10);
+    _display->setColor(DisplayDriver::LIGHT);
+    {
+      String ssid = WiFi.SSID();
+      String ip   = WiFi.localIP().toString();
+      snprintf(tmp, sizeof(tmp), "%s@%s",
+               ssid.length() ? ssid.c_str() : "?",
+               ip.c_str());
+      _display->print(tmp);
+    }
+#endif
+
     // freq / sf
     _display->setCursor(0, 20);
     _display->setColor(DisplayDriver::YELLOW);
@@ -89,6 +107,26 @@ void UITask::renderCurrScreen() {
     _display->setCursor(0, 30);
     sprintf(tmp, "BW: %03.2f CR: %d", _node_prefs->bw, _node_prefs->cr);
     _display->print(tmp);
+
+#ifdef TCPRADIO
+    // TCP modem status — distinct color so it's obvious if the link is down.
+    _display->setCursor(0, 44);
+    bool conn = radio_driver.isConnected();
+    bool hs   = radio_driver.isHandshakeComplete();
+    _display->setColor(hs ? DisplayDriver::GREEN
+                          : (conn ? DisplayDriver::YELLOW : DisplayDriver::RED));
+    const char* state = hs ? "OK" : (conn ? "CONN" : "DOWN");
+    snprintf(tmp, sizeof(tmp), "TCP %s rec=%lu", state,
+             (unsigned long)radio_driver.getReconnectCount());
+    _display->print(tmp);
+
+    _display->setCursor(0, 54);
+    _display->setColor(DisplayDriver::LIGHT);
+    snprintf(tmp, sizeof(tmp), "rx=%lu tx=%lu",
+             (unsigned long)radio_driver.getPacketsRecv(),
+             (unsigned long)radio_driver.getPacketsSent());
+    _display->print(tmp);
+#endif
   }
 }
 
