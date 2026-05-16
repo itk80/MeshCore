@@ -24,3 +24,6 @@ CLAUDE.local.md
 .claude/
 .claude.json
 .claude-code/
+
+# Working session log — local-only, not part of repo
+STATUS.md
