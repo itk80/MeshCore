@@ -17,3 +17,10 @@ compile_commands.json
 .venv/
 venv/
 platformio.local.ini
+
+# Claude / Claude Code artifacts (project instructions, settings, hooks)
+CLAUDE.md
+CLAUDE.local.md
+.claude/
+.claude.json
+.claude-code/
